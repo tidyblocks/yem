@@ -1,0 +1,17 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "ZTestOneSample",
+      "mean": 100,
+      "stdDev": 10,
+      "significance": 0.01,
+      "colName": "red"
+    }
+  ]
+]

@@ -1,0 +1,41 @@
+{
+  "name": "yem",
+  "version": "0.0.1",
+  "description": "TidyBlocks revisited",
+  "main": "index.js",
+  "scripts": {
+    "build": "browserify index.js -s yem -t [ babelify --presets [ @babel/preset-env ] ] > yem.min.js",
+    "coverage": "nyc --reporter=html --reporter=text mocha",
+    "docs": "jsdoc -c .jsdocrc --destination docs --readme README.md libs/*.js",
+    "fixtures": "fixtures/generate.js fixtures",
+    "lint": "eslint index.js libs/*.js",
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gvwilson/yem.git"
+  },
+  "author": "Greg Wilson <gvwilson@third-bit.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gvwilson/yem/issues"
+  },
+  "homepage": "https://github.com/gvwilson/yem#readme",
+  "dependencies": {
+    "@babel/core": "^7.8.4",
+    "@babel/preset-env": "^7.8.4",
+    "@stdlib/stdlib": "0.0.90",
+    "assert": "^2.0.0",
+    "babelify": "^10.0.0",
+    "browserify": "^16.5.0",
+    "eslint": "^6.8.0",
+    "eslint-plugin-import": "^2.20.1",
+    "eslint-plugin-node": "^11.0.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.1",
+    "jsdoc": "^3.6.3",
+    "mocha": "^7.0.1",
+    "nyc": "^15.0.0",
+    "papaparse": "^5.1.1"
+  }
+}

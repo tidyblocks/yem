@@ -1,0 +1,83 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="static/ui.css">
+    <script src="./redips-drag-source.js"></script>
+    <script src="./yem.min.js"></script>
+    <script src="./libs/ui.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega@5.9.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@4.0.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.2.1"></script>
+  </head>
+  <body onload="BrowserUI.Setup()">
+
+    <nav>
+      <div class="left">
+        <button class="menuButton" onclick="BrowserUI.instance.runProgram(event)">Run</button>
+        <button class="menuButton" onclick="BrowserUI.instance.triggerInput('loadProgram')">Load Program</button>
+        <button class="menuButton" onclick="BrowserUI.instance.triggerInput('loadData')">Load Data</button>
+        <button class="menuButton" onclick="BrowserUI.instance.saveProgram(event)">Save Program</button>
+        <button class="menuButton" onclick="BrowserUI.instance.saveData(event)">Save Data</button>
+        <button class="menuButton" onclick="BrowserUI.instance.savePlot(event)">Save Plot</button>
+
+        <input type="file" id="loadProgram" style="display:none" onchange="BrowserUI.instance.loadProgram(this.files)"/>
+        <input type="file" id="loadData" style="display:none" onchange="BrowserUI.instance.loadData(this.files)"/>
+      </div>
+      <div class="right tab">
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'dataTab')" id="tabDefault">Data</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'resultsTab')">Results</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'plotTab')">Plot</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'statisticsTab')">Statistics</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'programTab')">Program</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'logTab')">Log</button>
+        <button class="menuButton tabButton" onclick="BrowserUI.instance.showTab(event, 'errorTab')">Error</button>
+      </div>
+    </nav>
+
+    <main>
+      <div class="left workbench">
+        <h2>Workbench</h2>
+        <div id="redips-drag"></div>
+      </div>
+      <div class="right displays">
+        <div id="dataTab" class="tabContent">
+          <h2>
+            Data
+            <select class="tableSelector" id="dataSelect" onchange="BrowserUI.instance.displayData(null)"></select>
+          </h2>
+          <div id="dataArea"></div>
+        </div>
+        <div id="resultsTab" class="tabContent">
+          <h2>Results</h2>
+          <select class="tableSelector" id="resultsSelect" onchange="BrowserUI.instance.displayResults(null)"></select>
+          <div id="resultsArea"></div>
+        </div>
+        <div id="plotTab" class="tabContent">
+          <h2>Plot</h2>
+          <div id="plotArea"></div>
+        </div>
+        <div id="statisticsTab" class="tabContent">
+          <h2>Statistics</h2>
+          <div id="statisticsArea"></div>
+        </div>
+        <div id="programTab" class="tabContent">
+          <h2>Program</h2>
+          <div id="programArea"></div>
+        </div>
+        <div id="logTab" class="tabContent">
+          <h2>Log</h2>
+          <div id="logArea"></div>
+        </div>
+        <div id="errorTab" class="tabContent">
+          <h2>Error</h2>
+          <div id="errorArea"></div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <p>TidyBlocks</p>
+    </footer>
+  </body>
+</html>

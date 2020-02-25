@@ -1,0 +1,317 @@
+'use strict'
+
+const util = require('./util')
+const {
+  Op,
+  Typecheck,
+  Convert,
+  Datetime
+} = require('./op')
+const {
+  ExprBuilder,
+  PipeBuilder,
+  PlotBuilder,
+  StatsBuilder
+} = require('./builder')
+
+/**
+ * Save and restore pipelines.
+ */
+class Persist {
+  /**
+   * Turn program into JSON.
+   * @param {program} Program to convert to JSON.
+   */
+  static ProgramToJSON (program) {
+    return program.map(pipeline => Persist.PipelineToJSON(pipeline))
+  }
+
+  /**
+   * Turn a single pipeline into JSON.
+   * @param {pipeline} Program to convert to JSON.
+   */
+  static PipelineToJSON (pipeline) {
+    return pipeline.map(stage => stage.ast)
+  }
+
+  /**
+   * Turn JSON into program.
+   * @param {Object} json The JSON to convert to a program.
+   */
+  static JSONToProgram (json) {
+    return json.map(pipeline => Persist.JSONToPipeline(pipeline))
+  }
+
+  /**
+   * Turn JSON of a single pipeline into a pipeline.
+   * @param {Object} json The JSON to convert to a pipeline.
+   */
+  static JSONToPipeline (json) {
+    return json.map(stage => Persist.JSONToStage(stage))
+  }
+
+  /**
+   * Turn JSON of a single pipeline stage into that stage.
+   * @param {Stage} stage The pipeline stage to convert.
+   */
+  static JSONToStage (stage) {
+    util.check('kind' in stage,
+               `Each stage must have the 'kind' keyword`)
+    util.check(stage.kind === 'stage',
+               `Top-level pipeline elements should be stages, not ${stage.kind}`)
+    util.check('name' in stage,
+               `Each stage must have a name`)
+    let result = null
+    switch (stage.name) {
+    // Processing stages.
+    case 'drop':
+      result = PipeBuilder.Drop(stage.columns)
+      break
+    case 'filter':
+      result = PipeBuilder.Filter(Persist.JSONToOp(stage.op))
+      break
+    case 'groupBy':
+      result = PipeBuilder.GroupBy(stage.columns)
+      break
+    case 'join':
+      result = PipeBuilder.Join(stage.leftName, stage.leftCol,
+                                stage.rightName, stage.rightCol)
+      break
+    case 'mutate':
+      result = PipeBuilder.Mutate(stage.newName, Persist.JSONToOp(stage.op))
+      break
+    case 'notify':
+      result = PipeBuilder.Notify(stage.label)
+      break
+    case 'read':
+      result = PipeBuilder.Read(stage.path)
+      break
+    case 'select':
+      result = PipeBuilder.Select(stage.columns)
+      break
+    case 'sort':
+      result = PipeBuilder.Sort(stage.columns, stage.reverse)
+      break
+    case 'ungroup':
+      result = PipeBuilder.Ungroup()
+      break
+    case 'unique':
+      result = PipeBuilder.Unique(stage.columns)
+      break
+
+    // Plotting stages.
+    case 'bar':
+      result = PlotBuilder.Bar(stage.x_axis, stage.y_axis)
+      break
+    case 'box':
+      result = PlotBuilder.Box(stage.x_axis, stage.y_axis)
+      break
+    case 'dot':
+      result = PlotBuilder.Dot(stage.x_axis)
+      break
+    case 'histogram':
+      result = PlotBuilder.Histogram(stage.column, stage.bins)
+      break
+    case 'scatter':
+      result = PlotBuilder.Scatter(stage.x_axis, stage.y_axis, stage.color)
+      break
+
+    // Statistical stages.
+    case 'ANOVA':
+      result = StatsBuilder.ANOVA(stage.significance,
+                                  stage.groupName,
+                                  stage.valueName)
+      break
+    case 'KolmogorovSmirnov':
+      result = StatsBuilder.KolmogorovSmirnov(stage.mean,
+                                              stage.stdDev,
+                                              stage.significance,
+                                              stage.colName)
+      break
+    case 'KruskalWallis':
+      result = StatsBuilder.KruskalWallis(stage.significance,
+                                          stage.groupName,
+                                          stage.valueName)
+      break
+    case 'TTestOneSample':
+      result = StatsBuilder.TTestOneSample(stage.mean,
+                                           stage.significance,
+                                           stage.colName)
+      break
+    case 'TTestPaired':
+      result = StatsBuilder.TTestPaired(stage.significance,
+                                        stage.leftCol,
+                                        stage.rightCol)
+      break
+    case 'ZTestOneSample':
+      result = StatsBuilder.ZTestOneSample(stage.mean,
+                                           stage.stdDev,
+                                           stage.significance,
+                                           stage.colName)
+      break
+
+    // Unknown.
+    default:
+      util.fail(`Unknown stage kind "${stage.kind}"`)
+    }
+    return result
+  }
+
+  /**
+   * Turn JSON of nested expressions into nested operation functions.
+   * @param {function} expr The expression function to convert.
+   */
+  static JSONToOp (expr) {
+    util.check('kind' in expr,
+               `Each expression must have the 'kind' keyword ${expr}`)
+    let result = null
+    switch (expr.kind) {
+    case 'constant':
+      result = ExprBuilder.Constant(expr.constant)
+      break
+    case 'value':
+      result = ExprBuilder.Value(expr.column)
+      break
+    case 'unary':
+      result = ExprBuilder.Unary(Persist.OpLookup(expr.op),
+                                 Persist.JSONToOp(expr.child))
+      break
+    case 'binary':
+      result = ExprBuilder.Binary(Persist.OpLookup(expr.op),
+                                  Persist.JSONToOp(expr.left),
+                                  Persist.JSONToOp(expr.right))
+      break
+    case 'ternary':
+      result = ExprBuilder.Ternary(Persist.OpLookup(expr.op),
+                                   Persist.JSONToOp(expr.left),
+                                   Persist.JSONToOp(expr.middle),
+                                   Persist.JSONToOp(expr.right))
+      break
+    default:
+      util.fail(`Unknown expression kind "${expr.kind}"`)
+    }
+    return result
+  }
+
+  /**
+   * Look up operation function based on name.
+   */
+  static OpLookup (op) {
+    let result = null
+    switch (op) {
+    // Basic operations.
+    case 'add':
+      result = Op.add
+      break
+    case 'and':
+      result = Op.and
+      break
+    case 'divide':
+      result = Op.divide
+      break
+    case 'equal':
+      result = Op.equal
+      break
+    case 'greater':
+      result = Op.greater
+      break
+    case 'greaterEqual':
+      result = Op.greaterEqual
+      break
+    case 'ifElse':
+      result = Op.ifElse
+      break
+    case 'less':
+      result = Op.less
+      break
+    case 'lessEqual':
+      result = Op.lessEqual
+      break
+    case 'multiply':
+      result = Op.multiply
+      break
+    case 'negate':
+      result = Op.negate
+      break
+    case 'not':
+      result = Op.not
+      break
+    case 'notEqual':
+      result = Op.notEqual
+      break
+    case 'or':
+      result = Op.or
+      break
+    case 'power':
+      result = Op.power
+      break
+    case 'remainder':
+      result = Op.remainder
+      break
+    case 'subtract':
+      result = Op.subtract
+      break
+
+    // Type checks.
+    case 'isBool':
+      result = Typecheck.isBool
+      break
+    case 'isDatetime':
+      result = Typecheck.isDatetime
+      break
+    case 'isMissing':
+      result = Typecheck.isMissing
+      break
+    case 'isNumber':
+      result = Typecheck.isNumber
+      break
+    case 'isText':
+      result = Typecheck.isText
+      break
+
+    // Conversions.
+    case 'toBool':
+      result = Convert.toBool
+      break
+    case 'toDatetime':
+      result = Convert.toDatetime
+      break
+    case 'toNumber':
+      result = Convert.toNumber
+      break
+    case 'toText':
+      result = Convert.toText
+      break
+
+    // Dates and times.
+    case 'year':
+      result = Datetime.year
+      break
+    case 'month':
+      result = Datetime.month
+      break
+    case 'day':
+      result = Datetime.day
+      break
+    case 'weekday':
+      result = Datetime.weekday
+      break
+    case 'hours':
+      result = Datetime.hours
+      break
+    case 'minutes':
+      result = Datetime.minutes
+      break
+    case 'seconds':
+      result = Datetime.seconds
+      break
+
+    // Unknown.
+    default:
+      util.fail(`Unknown operation name "${op}"`)
+    }
+    return result
+  }
+}
+
+module.exports = Persist

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: statistics.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: statistics.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict'
+
+const stats = require('@stdlib/stats')
+
+/**
+ * Statistical tests.
+ */
+class Statistics {
+  /**
+   * ANOVA test.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} significance Significance threshold.
+   * @param {string} groupName Column to use for grouping.
+   * @param {string} valueName Column to use for values.
+   * @returns Result and legend.
+   */
+  static ANOVA (df, significance, groupName, valueName) {
+    const groups = df.data.map(row => row[groupName])
+    const values = df.data.map(row => row[valueName])
+    const result = stats.anova1(values, groups,
+                                {alpha: significance})
+    const legend = {
+      _title: 'ANOVA',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      alpha: 'significance'
+    }
+    return {result, legend}
+  }
+
+  /**
+   * Kolmogorov-Smirnov test for normality.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} mean Mean value tested for.
+   * @param {number} stdDev Standard deviation tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column being analyzed.
+   * @returns Result and legend.
+   */
+  static KolmogorovSmirnov (df, mean, stdDev, significance, colName) {
+    const samples = df.data.map(row => row[colName])
+    const result = stats.kstest(samples, 'uniform',
+                                mean, stdDev,
+                                {alpha: significance})
+    const legend = {
+      _title: 'Kolmogorov-Smirnov test for normality',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      alpha: 'significance'
+    }
+    return {result, legend}
+  }
+
+  /**
+   * Kruskal-Wallis test.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} significance Significance threshold.
+   * @param {string} groupName Column to use for grouping.
+   * @param {string} valueName Column to use for values.
+   * @returns Result and legend.
+   */
+  static KruskalWallis (df, significance, groupName, valueName) {
+    const samples = _split(df, groupName, valueName)
+    const result = stats.kruskalTest(...samples,
+                                     {alpha: significance})
+    const legend = {
+      _title: 'Kruskal-Wallis test',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      alpha: 'significance',
+      df: 'degrees of freedom'
+    }
+    return {result, legend}
+  }
+
+  /**
+   * One-sample two-sided t-test.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} mean Mean value tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column to get values from.
+   * @returns Result and legend.
+   */
+  static TTestOneSample (df, mean, significance, colName) {
+    const samples = df.data.map(row => row[colName])
+    const result = stats.ttest(samples,
+                               {mu: mean, alpha: significance})
+    const legend = {
+      _title: 'one-sample two-sided t-test',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      ci: 'confidence interval',
+      alpha: 'significance'
+    }
+    return {result, legend}
+  }
+
+  /**
+   * Paired two-sided t-test.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} significance Significance tested for.
+   * @param {string} leftCol The column to get one set of values from.
+   * @param {string} rightCol The column to get the other set of values from.
+   * @returns Result and legend.
+   */
+  static TTestPaired (df, significance, leftCol, rightCol) {
+    const left = df.data.map(row => row[leftCol])
+    const right = df.data.map(row => row[rightCol])
+    const result = stats.ttest2(left, right,
+                                {alpha: significance})
+    const legend = {
+      _title: 'paired two-sided t-test',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      ci: 'confidence interval',
+      alpha: 'significance',
+      xmean: 'x sample mean',
+      ymean: 'y sample mean'
+    }
+    return {result, legend}
+  }
+
+  /**
+   * One-sample Z-test.
+   * @param {DataFrame} df Dataframe being operated on.
+   * @param {number} mean Mean value tested for.
+   * @param {number} stdDev Standard deviation tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column to get values from.
+   * @returns Result and legend.
+   */
+  static ZTestOneSample (df, mean, stdDev, significance, colName) {
+    const samples = df.data.map(row => row[colName])
+    const result = stats.ztest(samples,
+                               stdDev,
+                               {mu: mean, alpha: significance})
+    const legend = {
+      _title: 'one-sample Z-test',
+      rejected: 'is null hypothesis rejected?',
+      pValue: 'p-value',
+      statistic: 'measure value',
+      ci: 'confidence interval',
+      alpha: 'significance'
+    }
+    return {result, legend}
+  }
+}
+
+//
+// Split values into sublists.
+//
+const _split = (df, groupName, valueName) => {
+  const grouped = {}
+  df.data.map(row => {
+    if (!(row[groupName] in grouped)) {
+      grouped[row[groupName]] = []
+    }
+    grouped[row[groupName]].push(row[valueName])
+  })
+  return Object.keys(grouped).map(key => grouped[key])
+}
+
+module.exports = Statistics
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="BrowserUI.html">BrowserUI</a></li><li><a href="Convert.html">Convert</a></li><li><a href="DataFrame.html">DataFrame</a></li><li><a href="Datetime.html">Datetime</a></li><li><a href="ExprBuilder.html">ExprBuilder</a></li><li><a href="Op.html">Op</a></li><li><a href="Persist.html">Persist</a></li><li><a href="PipeBuilder.html">PipeBuilder</a></li><li><a href="PlotBuilder.html">PlotBuilder</a></li><li><a href="Runner.html">Runner</a></li><li><a href="Stage.html">Stage</a></li><li><a href="Statistics.html">Statistics</a></li><li><a href="StatsBuilder.html">StatsBuilder</a></li><li><a href="Summarize.html">Summarize</a></li><li><a href="Typecheck.html">Typecheck</a></li><li><a href="util.html">util</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

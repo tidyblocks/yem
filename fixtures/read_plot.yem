@@ -1,0 +1,16 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "scatter",
+      "x_axis": "red",
+      "y_axis": "green",
+      "color": null
+    }
+  ]
+]

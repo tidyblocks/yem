@@ -1,0 +1,9 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    }
+  ]
+]

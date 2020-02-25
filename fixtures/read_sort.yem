@@ -1,0 +1,17 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "sort",
+      "columns": [
+        "red"
+      ],
+      "reverse": true
+    }
+  ]
+]

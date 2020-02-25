@@ -1,0 +1,148 @@
+<html>
+  <head>
+    <style>
+      table, th, td {
+          padding: 0.25em;
+          border: solid 1px black;
+          border-collapse: collapse;
+      }
+      th, td {
+          height: 4ex;
+      }
+      div.redips-drag {
+          text-align: center;
+      }
+      .redips-mark, .redips-trash {
+          background-color: azure;
+      }
+    </style>
+    <script src="../redips-drag-source.js"></script>
+    <script src="./test.js"></script>
+  </head>
+  <body>
+    <div id="redips-drag">
+      <table>
+        <!-- column titles -->
+        <tr>
+          <th class="redips-mark">Palette</th>
+          <th class="redips-mark">Column 1</th>
+          <th class="redips-mark">Column 2</th>
+          <th class="redips-mark">Column 3</th>
+        </tr>
+        <!-- Constant -->
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-constant">
+              <table>
+                <tr>
+                  <td class="redips-mark">Constant</td>
+                  <td class="redips-mark"><input type="text" size="8" /></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <!-- Column value -->
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-value">
+              <table>
+                <tr>
+                  <td class="redips-mark">Column</td>
+                  <td class="redips-mark"><input type="text" size="8" />
+                </tr>
+              </table>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <!-- Unary -->
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-unary">
+              <table>
+                <tr>
+                  <td class="redips-mark">
+                    <select>
+                      <option value="not">not</option>
+                      <option value="negate">-</option>
+                    </select>
+                  </td>
+                  <td width="40px"></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <!-- Binary -->
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-binary">
+              <table>
+                <tr>
+                  <td width="40px"></td>
+                  <td class="redips-mark">
+                    <select>
+                      <option value="plus">+</option>
+                      <option value="minus">-</option>
+                    </select>
+                  </td>
+                  <td width="40px"></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <!-- Pipe stages -->
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-pipe">
+              <table>
+                <tr>
+                  <td class="redips-mark">Filter</td>
+                  <td width="40px"></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-pipe">
+              <table>
+                <tr>
+                  <td class="redips-mark">Mutate</td>
+                  <td class="redips-mark"><input type="text" size="8" /></td>
+                  <td width="40px"></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <tr>
+          <th class="redips-mark">
+            <div class="redips-drag redips-clone yem-pipe">
+              <table>
+                <tr>
+                  <td class="redips-mark">Read</td>
+                  <td class="redips-mark"><input type="text" size="8" /></td>
+                </tr>
+              </table>
+            </div>
+          </th>
+          <td></td> <td></td> <td></td>
+        </tr>
+        <tr id="bottomRow">
+          <th class="redips-mark"></th>
+          <th class="redips-mark"></th>
+          <th class="redips-mark" onclick="addRow()">[+]</th>
+          <th class="redips-trash">Trash</th>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>

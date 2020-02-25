@@ -1,0 +1,14 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "notify",
+      "label": "answer"
+    }
+  ]
+]

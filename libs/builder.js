@@ -1,0 +1,641 @@
+'use strict'
+
+const util = require('./util')
+const DataFrame = require('./dataframe')
+const {
+  Op,
+  Typecheck,
+  Convert,
+  Datetime
+} = require('./op')
+const Statistics = require('./statistics')
+
+/**
+ * Store information about a stage in a pipeline
+ */
+class Stage {
+  /**
+   * @param {function} run How to run this pipeline stage.
+   * @param {string[]} requires What datasets are required before this can run?
+   * @param {string} produces What dataset does this stage produce?
+   * @param {boolean} input Does this stage require input?
+   * @param {boolean} output Does this stage produce input?
+   */
+  constructor (run, requires, produces, input, output) {
+    util.check(typeof run === 'function',
+               `need runnable function`)
+    requires = (requires === null) ? [] : requires
+    util.check(Array.isArray(requires) && requires.every(x => (typeof x === 'string')),
+               `requires must be null or an array of strings`)
+    util.check((produces === null) || (typeof produces === 'string'),
+               `produces must be null or a function`)
+    Object.assign(this, {run, requires, produces, input, output})
+    this.ast = run.ast
+  }
+
+  /**
+   * Pretty-print the stage.
+   * @returns A string.
+   */
+  pretty () {
+    const temp = Object.assign({}, this.ast)
+    delete temp.kind
+    delete temp.name
+    return `${this.ast.name}: ${JSON.stringify(temp)}`
+  }
+}
+
+/**
+ * Make expressions.
+ */
+class ExprBuilder {
+  /**
+   * Make a function that produces a constant.
+   * @param constant {any} Value to return.
+   * @returns Uniform function.
+   */
+  static Constant (constant) {
+    const run = (row, i) => constant
+    run.ast = {kind: 'constant', constant}
+    return run
+  }
+
+  /**
+   * Make a function that gets a column value.
+   * @param {string} Column name.
+   * @returns Uniform function.
+   */
+  static Value (column) {
+    const run = (row, i) => Op.get(row, i, column)
+    run.ast = {kind: 'value', column}
+    return run
+  }
+
+  /**
+   * Make a function that evaluates a unary expression.
+   * @param op {function} Operator function.
+   * @param child {function} Operand.
+   * @returns Uniform function.
+   */
+  static Unary (op, child) {
+    const run = (row, i) => op(row, i, child)
+    run.ast = {kind: 'unary', name: op.name, child: child.ast}
+    return run
+  }
+
+  /**
+   * Make a function that evaluates a binary expression.
+   * @param op {function} Operator function.
+   * @param left {function} Left operand.
+   * @param right {function} Right operand.
+   * @returns Uniform function.
+   */
+  static Binary (op, left, right) {
+    const run = (row, i) => op(row, i, left, right)
+    run.ast = {kind: 'binary', name: op.name,
+               left: left.ast, right: right.ast}
+    return run
+  }
+
+  /**
+   * Make a function that evaluates a ternary expression.
+   * @param op {function} Operator function.
+   * @param left {function} Left operand.
+   * @param middle {function} Middle operand.
+   * @param right {function} Right operand.
+   * @returns Uniform function.
+   */
+  static Ternary (op, left, middle, right) {
+    const run = (row, i) => op(row, i, left, middle, right)
+    run.ast = {kind: 'ternary', name: op.name,
+               left: left.ast,
+               middle: middle.ast,
+               right: right.ast}
+    return run
+  }
+}
+
+ExprBuilder.FIELDS = {
+  Constant: ['Constant', '@text'],
+  Value: ['Value', '@text'],
+  Unary: [[['not', "not"],
+           ['-', "negate"],
+           ['isBool', "isBool"],
+           ['isDatetime', "isDatetime"],
+           ['isMissing', "isMissing"],
+           ['isNumber', "isNumber"],
+           ['isText', "isText"],
+           ['toBool', "toBool"],
+           ['toDatetime', "toDatetime"],
+           ['toNumber', "toNumber"],
+           ['toText', "toText"],
+           ['year', "year"],
+           ['month', "month"],
+           ['day', "day"],
+           ['weekday', "weekday"],
+           ['hours', "hours"],
+           ['minutes', "minutes"],
+           ['seconds', "seconds"]],
+          '@expr'],
+  Binary: ['@expr',
+           [['+', "add"],
+            ['-', "subtract"],
+            ['*', "multiply"],
+            ['/', "divide"],
+            ['%', "remainder"],
+            ['**', "power"],
+            ['and', "and"],
+            ['or', "or"],
+            ['=', "equal"],
+            ['!=', "notEqual"],
+            ['>', "greater"],
+            ['>=', "greaterEqual"],
+            ['<=', "lessEqual"],
+            ['<', "less"]],
+           '@expr'],
+  Ternary: ['if',
+            '@expr',
+            'then',
+            '@expr',
+            'else',
+            '@expr']
+}
+
+/**
+ * Construct pipeline stages.
+ */
+class PipeBuilder {
+  /**
+   * Make a function to drop columns.
+   * @param {string[]} columns The names of the columns to discard.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Drop (columns) {
+    const ast = {kind: 'stage', name: 'drop', columns}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.drop(columns)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to filter rows.
+   * @param {function} op The operation function that tests rows.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Filter (op) {
+    const ast = {kind: 'stage', name: 'filter', op: op.ast}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.filter(op)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to group values.
+   * @param {string[]} columns The columns that determine groups.
+   * @returns A dataframe pipeline stage object.
+   */
+  static GroupBy (columns) {
+    const ast = {kind: 'stage', name: 'groupBy', columns}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.groupBy(columns)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to join values.
+   * @param {string} leftName Name of left table to wait for.
+   * @param {string} leftCol Name of column in left table.
+   * @param {string} rightName Name of right table to wait for.
+   * @param {string} rightCol Name of column in right table.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Join (leftName, leftCol, rightName, rightCol) {
+    const ast = {kind: 'stage', name: 'join',
+                 leftName, leftCol, rightName, rightCol}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      util.check(df === null,
+                 `Cannot provide input dataframe to join`)
+      const left = runner.getResult(leftName)
+      const right = runner.getResult(rightName)
+      return left.join(leftName, leftCol, right, rightName, rightCol)
+    }
+    run.ast = ast
+    return new Stage(run, [leftName, rightName], null, false, true)
+  }
+
+  /**
+   * Make a function to create new columns.
+   * @param {string} newName New column's name.
+   * @param {function} op Operation function that creates new values.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Mutate (newName, op) {
+    const ast = {kind: 'stage', name: 'mutate',
+                 newName, op: op.ast}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.mutate(newName, op)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to notify that a result is available.
+   * @param {string} label Name to use for notification.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Notify (label) {
+    util.check(label.trim(),
+               `Require non-empty name for notification`)
+    const ast = {kind: 'stage', name: 'notify', label}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df
+    }
+    run.ast = ast
+    return new Stage(run, null, label, true, false)
+  }
+
+  /**
+   * Make a function to read a dataset.
+   * @param {function} env Runtime environment.
+   * @param {string} path Path to data.
+   * @returns A new dataframe.
+   */
+  static Read (path) {
+    const ast = {kind: 'stage', name: 'read', path}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      util.check(df === null,
+                 `Cannot provide input dataframe to reader`)
+      return new DataFrame(runner.ui.getData(path))
+    }
+    run.ast = ast
+    return new Stage(run, null, null, false, true)
+  }
+
+  /**
+   * Make a function to select columns.
+   * @param {string[]} columns The names of the columns to keep.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Select (columns) {
+    const ast = {kind: 'stage', name: 'select', columns}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.select(columns)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to sort data.
+   * @param {string[]} columns Names of columns to sort by.
+   * @param {Boolean} reverse Sort in reverse (descending) order?
+   * @returns A dataframe pipeline stage object.
+   */
+  static Sort (columns, reverse) {
+    const ast = {kind: 'stage', name: 'sort', columns, reverse}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.sort(columns, reverse)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to remove grouping
+   * @returns A dataframe pipeline stage object.
+   */
+  static Ungroup () {
+    const ast = {kind: 'stage', name: 'ungroup'}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.ungroup()
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+
+  /**
+   * Make a function to select rows with unique values.
+   * @param {string[]} columns The columns to use for uniqueness test.
+   * @returns A dataframe pipeline stage object.
+   */
+  static Unique (columns) {
+    const ast = {kind: 'stage', name: 'unique', columns}
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      return df.unique(columns)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, true)
+  }
+}
+
+PipeBuilder.FIELDS = {
+  Drop: ['drop', '@textMulti'],
+  Filter: ['filter', '@expr'],
+  GroupBy: ['groupby', '@textMulti'],
+  Join: ['join'],
+  Mutate: ['mutate', '@text', '@expr'],
+  Notify: ['notify', '@text'],
+  Read: ['read', '@text'],
+  Select: ['select', '@textMulti'],
+  Sort: ['sort', '@textMulti', 'reverse', '@bool'],
+  Ungroup: ['ungroup'],
+  Unique: ['unique', '@textMulti']
+}
+
+/**
+ * Construct plots.
+ */
+class PlotBuilder {
+  /**
+   * Create a bar plot.
+   * @param {string} x_axis Which column to use for the X axis.
+   * @param {string} y_axis Which column to use for the Y axis.
+   */
+  static Bar (x_axis, y_axis) {
+    util.check(x_axis && y_axis &&
+               (typeof x_axis === 'string') &&
+               (typeof y_axis === 'string'),
+               `Must provide non-empty strings for axes`)
+    const spec = {
+      data: {values: null},
+      mark: 'bar',
+      encoding: {
+        x: {field: x_axis, type: 'ordinal'},
+        y: {field: y_axis, type: 'quantitative'},
+        tooltip: {field: y_axis, type: 'quantitative'}
+      }
+    }
+    return PlotBuilder._build(spec, {name: 'bar', x_axis, y_axis})
+  }
+
+  /**
+   * Create a box plot.
+   * @param {string} x_axis Which column to use for the X axis.
+   * @param {string} y_axis Which column to use for the Y axis.
+   */
+  static Box (x_axis, y_axis) {
+    util.check(x_axis && y_axis &&
+               (typeof x_axis === 'string') &&
+               (typeof y_axis === 'string'),
+               `Must provide non-empty strings for axes`)
+    const spec = {
+      data: {values: null},
+      mark: {type: 'boxplot', extent: 1.5},
+      encoding: {
+        x: {field: x_axis, type: 'ordinal'},
+        y: {field: y_axis, type: 'quantitative'}
+      }
+    }
+    return PlotBuilder._build(spec, {name: 'box', x_axis, y_axis})
+  }
+
+  /**
+   * Create a dot plot.
+   * @param {string} x_axis Which column to use for the X axis.
+   */
+  static Dot (x_axis) {
+    util.check(x_axis && (typeof x_axis === 'string'),
+               `Must provide non-empty string for axis`)
+    const spec = {
+      data: {values: null},
+      mark: {type: 'circle', opacity: 1},
+      transform: [{
+        window: [{op: 'rank', as: 'id'}],
+        groupby: [x_axis]
+      }],
+      encoding: {
+        x: {field: x_axis, type: 'ordinal'},
+        y: {field: 'id', type: 'ordinal',
+            axis: null, sort: 'descending'}
+      }
+    }
+    return PlotBuilder._build(spec, {name: 'dot', x_axis})
+  }
+
+  /**
+   * Create a histogram.
+   * @param {string} column Which column to use for values.
+   * @param {number} bins How many bins to use.
+   */
+  static Histogram (column, bins) {
+    util.check(column && (typeof column === 'string') &&
+               (typeof bins === 'number') && (bins > 0),
+               `Invalid parameters for histogram`)
+    const spec = {
+      data: {values: null},
+      mark: 'bar',
+      encoding: {
+        x: {
+          bin: {maxbins: bins},
+          field: column,
+          type: 'quantitative'
+        },
+        y: {
+          aggregate: 'count',
+          type: 'quantitative'
+        },
+        tooltip: null
+      }
+    }
+    return PlotBuilder._build(spec, {name: 'histogram', column, bins})
+  }
+
+  /**
+   * Create a scatter plot.
+   * @param {string} x_axis Which column to use for the X axis.
+   * @param {string} y_axis Which column to use for the Y axis.
+   * @param {string} color Which column to use for color (if any).
+   */
+  static Scatter (x_axis, y_axis, color) {
+    util.check(x_axis && y_axis &&
+               (typeof x_axis === 'string') &&
+               (typeof y_axis === 'string'),
+               `Must provide non-empty strings for axes`)
+    util.check((color === null) ||
+               ((typeof color === 'string') && color),
+               `Must provide null or non-empty string for color`)
+    const spec = {
+      data: {values: null},
+      mark: 'point',
+      encoding: {
+        x: {field: x_axis, type: 'quantitative'},
+        y: {field: y_axis, type: 'quantitative'}
+      }
+    }
+    if (color) {
+      spec.encoding.color = {field: color, type: 'nominal'}
+    }
+    return PlotBuilder._build(spec, {name: 'scatter', x_axis, y_axis, color})
+  }
+
+  /**
+   * Boilerplate for all plotting functions.
+   */
+  static _build (spec, ast) {
+    ast = Object.assign({kind: 'stage'}, ast)
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      spec.data.values = df.data
+      runner.ui.displayPlot(spec)
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, false)
+  }
+}
+
+PlotBuilder.FIELDS = {
+  Bar: ['bar', 'x', '@text', 'y', '@text'],
+  Box: ['box', 'x', '@text', 'y', '@text'],
+  Dot: ['dot', 'x', '@text'],
+  Histogram: ['histogram', 'column', '@text', 'bins', '@text'],
+  Scatter: ['scatter', 'x', '@text', 'y', '@text', 'color', '@text']
+}
+
+/**
+ * Run statistical tests.
+ */
+class StatsBuilder {
+  /**
+   * ANOVA test.
+   * @param {number} significane Significance threshold.
+   * @param {string} groupName Column to use for grouping.
+   * @param {string} valueName Column to use for values.
+   * @returns Pipe stage.
+   */
+  static ANOVA (significance, groupName, valueName) {
+    const test = (runner, df) => {
+      return Statistics.ANOVA(df, significance, groupName, valueName)
+    }
+    const ast = {name: 'ANOVA', significance, groupName, valueName}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * Kolmogorov-Smirnov test for normality.
+   * @param {number} mean Mean value tested for.
+   * @param {number} stdDev Standard deviation tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column being analyzed.
+   * @returns Pipe stage.
+   */
+  static KolmogorovSmirnov (mean, stdDev, significance, colName) {
+    const test = (runner, df) => {
+      return Statistics.KolmogorovSmirnov(df, mean, stdDev, significance, colName)
+    }
+    const ast = {name: 'KolmogorovSmirnov', mean, stdDev, significance, colName}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * Kruskal-Wallis test.
+   * @param {number} significance Significance threshold.
+   * @param {string} groupName Column to use for grouping.
+   * @param {string} valueName Column to use for values.
+   * @returns Pipe stage.
+   */
+  static KruskalWallis (significance, groupName, valueName) {
+    const test = (runner, df) => {
+      return Statistics.KruskalWallis(df, significance, groupName, valueName)
+    }
+    const ast = {name: 'KruskalWallis', significance, groupName, valueName}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * One-sample two-sided t-test.
+   * @param {number} mean Mean value tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column to get values from.
+   * @returns Pipe stage.
+   */
+  static TTestOneSample (mean, significance, colName) {
+    const test = (runner, df) => {
+      return Statistics.TTestOneSample(df, mean, significance, colName)
+    }
+    const ast = {name: 'TTestOneSample', mean, significance, colName}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * Paired two-sided t-test.
+   * @param {number} significance Significance tested for.
+   * @param {string} leftCol The column to get one set of values from.
+   * @param {string} rightCol The column to get the other set of values from.
+   * @returns Pipe stage.
+   */
+  static TTestPaired (significance, leftCol, rightCol) {
+    const test = (runner, df) => {
+      return Statistics.TTestPaired(df, significance, leftCol, rightCol)
+    }
+    const ast = {name: 'TTestPaired', significance, leftCol, rightCol}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * One-sample Z-test.
+   * @param {number} mean Mean value tested for.
+   * @param {number} stdDev Standard deviation tested for.
+   * @param {number} significance Significance threshold.
+   * @param {string} colName The column to get values from.
+   * @returns Pipe stage.
+   */
+  static ZTestOneSample (mean, stdDev, significance, colName) {
+    const test = (runner, df) => {
+      return Statistics.ZTestOneSample(df, mean, stdDev, significance, colName)
+    }
+    const ast = {name: 'ZTestOneSample', mean, stdDev, significance, colName}
+    return StatsBuilder._build(test, ast)
+  }
+
+  /**
+   * Boilerplate for all statistical functions.
+   * @param {function} test The statistical test.
+   * @param {Object} ast The test's AST (for display purposes).
+   */
+  static _build (test, ast) {
+    ast = Object.assign({kind: 'stage'}, ast)
+    const run = (runner, df) => {
+      runner.appendLog(ast)
+      const {result, legend} = test(runner, df)
+      runner.ui.displayStatistics(result, legend)
+      return df
+    }
+    run.ast = ast
+    return new Stage(run, null, null, true, false)
+  }
+}
+
+StatsBuilder.FIELDS = {
+  ANOVA: ['ANOVA', 'sig', '@text', 'group', '@text', 'value', '@text'],
+  KolmogorovSmirnov: ['KS', 'mean', '@text', 'SD', '@text', 'sig', '@text', 'col', '@text'],
+  KruskalWallis: ['KW', 'sig', '@text', 'group', '@text', 'value', '@text'],
+  TTestOneSample: ['T-Test 1', 'mean', '@text', 'sig', '@text', 'col', '@text'],
+  TTestPaired: ['T-Test 2', 'sig', '@text', 'left', '@text', 'right', '@text'],
+  ZTestOneSample: ['Z-Test', 'mean', '@text', 'SD', '@text', 'sig', '@text', 'col', '@text'],
+}
+
+module.exports = {
+  Stage,
+  ExprBuilder,
+  PipeBuilder,
+  PlotBuilder,
+  StatsBuilder
+}

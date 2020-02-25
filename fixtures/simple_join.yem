@@ -1,0 +1,41 @@
+[
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "notify",
+      "label": "alpha"
+    }
+  ],
+  [
+    {
+      "kind": "stage",
+      "name": "read",
+      "path": "colors.csv"
+    },
+    {
+      "kind": "stage",
+      "name": "notify",
+      "label": "beta"
+    }
+  ],
+  [
+    {
+      "kind": "stage",
+      "name": "join",
+      "leftName": "alpha",
+      "leftCol": "red",
+      "rightName": "beta",
+      "rightCol": "green"
+    },
+    {
+      "kind": "stage",
+      "name": "notify",
+      "label": "final"
+    }
+  ]
+]
